@@ -1,0 +1,108 @@
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Calendar, Clock, MapPin, Users, Heart } from 'lucide-react';
+import { Button } from './ui/button';
+import { Badge } from './ui/badge';
+import { Event, categoryLabels, categoryColors } from '@/data/events';
+import { cn } from '@/lib/utils';
+import { format, parseISO } from 'date-fns';
+
+interface EventCardProps {
+  event: Event;
+}
+
+const EventCard = ({ event }: EventCardProps) => {
+  const [isInterested, setIsInterested] = useState(false);
+  const [interestCount, setInterestCount] = useState(event.interestedCount);
+
+  const handleInterestClick = () => {
+    if (isInterested) {
+      setInterestCount((prev) => prev - 1);
+    } else {
+      setInterestCount((prev) => prev + 1);
+    }
+    setIsInterested(!isInterested);
+  };
+
+  const formattedDate = format(parseISO(event.date), 'MMM dd, yyyy');
+
+  return (
+    <article className="group overflow-hidden rounded-2xl border border-border bg-card shadow-card transition-all duration-300 hover:shadow-card-hover hover:-translate-y-1">
+      {/* Image */}
+      <Link to={`/events/${event.id}`} className="relative block aspect-[16/10] overflow-hidden">
+        <img
+          src={event.posterUrl}
+          alt={event.title}
+          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-foreground/60 to-transparent" />
+        
+        {/* Category Badge */}
+        <Badge
+          className={cn(
+            'absolute left-4 top-4 border-0 text-xs font-semibold text-primary-foreground',
+            categoryColors[event.category]
+          )}
+        >
+          {categoryLabels[event.category]}
+        </Badge>
+
+        {/* Society */}
+        <div className="absolute bottom-4 left-4">
+          <span className="text-sm font-medium text-primary-foreground/90">
+            {event.society}
+          </span>
+        </div>
+      </Link>
+
+      {/* Content */}
+      <div className="p-5">
+        <Link to={`/events/${event.id}`} className="block">
+          <h3 className="mb-2 text-lg font-bold text-card-foreground line-clamp-1 group-hover:text-primary transition-colors">
+            {event.title}
+          </h3>
+          <p className="mb-4 text-sm text-muted-foreground line-clamp-2">
+            {event.description}
+          </p>
+        </Link>
+
+        {/* Meta Info */}
+        <div className="mb-4 flex flex-wrap gap-3 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1.5">
+            <Calendar className="h-3.5 w-3.5" />
+            <span>{formattedDate}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Clock className="h-3.5 w-3.5" />
+            <span>{event.time}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <MapPin className="h-3.5 w-3.5" />
+            <span>{event.venue}</span>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <Users className="h-4 w-4" />
+            <span className="font-medium">{interestCount}</span>
+            <span>interested</span>
+          </div>
+
+          <Button
+            variant={isInterested ? 'interest-active' : 'interest'}
+            size="sm"
+            onClick={handleInterestClick}
+            className="gap-1.5"
+          >
+            <Heart className={cn('h-4 w-4', isInterested && 'fill-current')} />
+            {isInterested ? 'Interested!' : "I'm Interested"}
+          </Button>
+        </div>
+      </div>
+    </article>
+  );
+};
+
+export default EventCard;
