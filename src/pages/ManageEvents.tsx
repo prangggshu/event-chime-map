@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Upload, Save, Sparkles, Edit3 } from "lucide-react";
+import { Upload, Save, Sparkles } from "lucide-react";
 import Tesseract from "tesseract.js";
 
 import { Button } from "@/components/ui/button";
@@ -13,15 +13,19 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
 
 /* ================= TYPES ================= */
 
+type Category = "Technical" | "Cultural" | "Sports" | "Academic" | "";
+
 type EventForm = {
   title: string;
   date: string;
+  time: string;
   venue: string;
+  category: Category;
+  society: string;
   description: string;
   posterUrl: string;
 };
@@ -38,30 +42,19 @@ const AUTH_ROLE_KEY = "auth:role";
 const DEFAULT_POSTER =
   "https://images.unsplash.com/photo-1489515217757-5fd1be406fef?w=600&h=400&fit=crop&auto=format";
 
-/* ================= IMAGE PREPROCESSING ================= */
+/* ================= OCR HELPERS ================= */
 
 const preprocessImage = async (file: File): Promise<File> => {
   const bitmap = await createImageBitmap(file);
   const canvas = document.createElement("canvas");
-
   const scale = 2;
+
   canvas.width = bitmap.width * scale;
   canvas.height = bitmap.height * scale;
 
   const ctx = canvas.getContext("2d")!;
   ctx.scale(scale, scale);
   ctx.drawImage(bitmap, 0, 0);
-
-  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const d = img.data;
-
-  for (let i = 0; i < d.length; i += 4) {
-    const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-    const c = Math.min(255, Math.max(0, (gray - 128) * 1.5 + 128));
-    d[i] = d[i + 1] = d[i + 2] = c;
-  }
-
-  ctx.putImageData(img, 0, 0);
 
   return new Promise((resolve) =>
     canvas.toBlob(
@@ -71,61 +64,33 @@ const preprocessImage = async (file: File): Promise<File> => {
   );
 };
 
-/* ================= OCR ================= */
-
 const runOCR = async (file: File) => {
   const processed = await preprocessImage(file);
-
-  const res = await Tesseract.recognize(processed, "eng", {
-    psm: 4,
-    preserve_interword_spaces: "1",
-    tessedit_char_blacklist: "|_~`^",
-  } as any);
-
+  const res = await Tesseract.recognize(processed, "eng");
   return res.data.text;
 };
 
-/* ================= CLEAN OCR TEXT ================= */
-
 const cleanOCRText = (text: string) =>
-  text
-    .replace(/[^\x20-\x7E\n]/g, "")
-    .replace(/[•●◆■]/g, "")
-    .replace(/[_|~`^]/g, "")
-    .replace(/\s{2,}/g, " ")
-    .trim();
+  text.replace(/[^\x20-\x7E\n]/g, "").replace(/\s{2,}/g, " ").trim();
 
-/* ================= PARSER ================= */
+const extractByLabels = (text: string) => {
+  const get = (label: string) =>
+    text.match(new RegExp(`${label}\\s*[:\\-]?\\s*(.+)`, "i"))?.[1] || "";
 
-const fallbackParser = (text: string) => {
-  const lines = text
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l.length > 3);
+  return {
+    title: get("Event Title"),
+    date: get("Date"),
+    time: get("Time"),
+    venue: get("Venue"),
+    society: get("Society|Organised by|Organized by"),
+    description: get("Description"),
+  };
+};
 
-  let title =
-    lines
-      .filter((l) => l.length < 60)
-      .sort((a, b) => b.length - a.length)[0] || "";
-
-  let date = "";
-  let venue = "";
-
-  const dateRegex =
-    /(\d{1,2}\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s*\d{4})/i;
-
-  for (const l of lines) {
-    if (!date && dateRegex.test(l)) date = l.match(dateRegex)![0];
-    if (
-      !venue &&
-      /(venue|campus|hall|auditorium|block|room)/i.test(l)
-    )
-      venue = l;
-  }
-
-  const description = lines.join(" ").slice(0, 200);
-
-  return { title, date, venue, description };
+const normalizeDate = (raw: string) => {
+  const m = raw.match(/(\d{1,2})[./-](\d{1,2})[./-](\d{4})/);
+  if (!m) return "";
+  return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
 };
 
 /* ================= COMPONENT ================= */
@@ -142,19 +107,21 @@ const ManageEvents = () => {
   const [form, setForm] = useState<EventForm>({
     title: "",
     date: "",
+    time: "",
     venue: "",
+    category: "",
+    society: "",
     description: "",
     posterUrl: "",
   });
 
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [loadingOCR, setLoadingOCR] = useState(false);
 
   /* ---------- AUTH ---------- */
 
   useEffect(() => {
     if (localStorage.getItem(AUTH_ROLE_KEY) !== "society") {
-      navigate("/login?role=society", { replace: true });
+      navigate("/login", { replace: true });
     }
   }, [navigate]);
 
@@ -167,38 +134,32 @@ const ManageEvents = () => {
     [form]
   );
 
-  /* ---------- POSTER OCR ---------- */
+  /* ---------- OCR ---------- */
 
   const handlePosterUpload = async (file: File) => {
     setLoadingOCR(true);
-    setForm((p) => ({ ...p, posterUrl: URL.createObjectURL(file) }));
+    const url = URL.createObjectURL(file);
+setForm((p) => ({
+  ...p,
+  posterUrl: url,
+  coverUrl: url, // use poster as display image initially
+}));
 
     try {
-      const raw = await runOCR(file);
-      const cleaned = cleanOCRText(raw);
-
-      console.log("RAW OCR:", raw);
-      console.log("CLEANED OCR:", cleaned);
-
-      const extracted = fallbackParser(cleaned);
+      const cleaned = cleanOCRText(await runOCR(file));
+      const extracted = extractByLabels(cleaned);
 
       setForm((p) => ({
         ...p,
-        title: extracted.title.length > 5 ? extracted.title : p.title,
+        title: extracted.title || p.title,
+        date: normalizeDate(extracted.date) || p.date,
+        time: extracted.time || p.time,
         venue: extracted.venue || p.venue,
+        society: extracted.society || p.society,
         description: extracted.description || p.description,
       }));
 
-      toast({
-        title: "Poster scanned",
-        description: "Fields auto-filled (review before publishing)",
-      });
-    } catch {
-      toast({
-        title: "OCR failed",
-        description: "Fill details manually",
-        variant: "destructive",
-      });
+      toast({ title: "Poster scanned successfully" });
     } finally {
       setLoadingOCR(false);
     }
@@ -207,34 +168,23 @@ const ManageEvents = () => {
   /* ---------- SAVE ---------- */
 
   const saveEvent = (status: EventItem["status"]) => {
-    if (
-      status === "Published" &&
-      (!form.title || !form.date || !form.venue)
-    ) {
+    if (!form.title || !form.date || !form.venue) {
       toast({
         title: "Missing fields",
-        description: "Complete all details before publishing",
+        description: "Please complete required fields",
         variant: "destructive",
       });
       return;
     }
 
-    const id = editingId ?? Date.now().toString();
-
     const next: EventItem = {
-      id,
+      id: Date.now().toString(),
       ...form,
       posterUrl: form.posterUrl || DEFAULT_POSTER,
       status,
     };
 
-    setEvents((prev) =>
-      prev.some((e) => e.id === id)
-        ? prev.map((e) => (e.id === id ? next : e))
-        : [next, ...prev]
-    );
-
-    setEditingId(id);
+    setEvents((p) => [next, ...p]);
     toast({ title: status === "Published" ? "Event published" : "Draft saved" });
   };
 
@@ -242,86 +192,81 @@ const ManageEvents = () => {
 
   return (
     <div className="min-h-screen bg-orange-50 p-8 font-playfair">
-      <h1 className="mb-6 text-4xl font-bold text-orange-900">
-        Manage Events
-      </h1>
+
+      {/* HEADER */}
+      <div className="mb-8 flex items-center gap-4">
+        <button
+          onClick={() => navigate("/")}
+          className="text-lg font-semibold text-orange-700 hover:underline"
+        >
+          ← All Events
+        </button>
+        <h1 className="text-base font-medium text-orange-900">
+          Manage Events
+        </h1>
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
+
         {/* FORM */}
         <Card>
           <CardHeader>
             <CardTitle>Create / Edit Event</CardTitle>
-            <Badge className="w-fit bg-orange-100 text-orange-700">
-              AI-assisted
-            </Badge>
           </CardHeader>
 
           <CardContent className="space-y-4">
-            <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-orange-300 p-3 hover:bg-orange-100">
-              <Upload className="h-4 w-4" />
-              Upload poster (OCR)
-              <input
-                hidden
-                type="file"
-                accept="image/*"
-                onChange={(e) =>
-                  e.target.files && handlePosterUpload(e.target.files[0])
-                }
-              />
-            </label>
-
-            {loadingOCR && (
-              <p className="text-sm text-orange-600">
-                Scanning poster…
-              </p>
+            {form.posterUrl && (
+              <div className="relative overflow-hidden rounded-xl border">
+                <img src={form.posterUrl} className="h-52 w-full object-cover" />
+                {form.category && (
+                  <span className="absolute left-3 top-3 rounded-full bg-blue-500 px-3 py-1 text-xs text-white">
+                    {form.category}
+                  </span>
+                )}
+                {form.society && (
+                  <span className="absolute bottom-3 left-3 text-sm text-white">
+                    {form.society}
+                  </span>
+                )}
+              </div>
             )}
 
-            <Input
-              placeholder="Event title"
-              value={form.title}
-              onChange={(e) =>
-                setForm({ ...form, title: e.target.value })
-              }
-            />
-            <Input
-              type="date"
-              value={form.date}
-              onChange={(e) =>
-                setForm({ ...form, date: e.target.value })
-              }
-            />
-            <Input
-              placeholder="Venue"
-              value={form.venue}
-              onChange={(e) =>
-                setForm({ ...form, venue: e.target.value })
-              }
-            />
-            <Textarea
-              rows={4}
-              placeholder="Description"
-              value={form.description}
-              onChange={(e) =>
-                setForm({ ...form, description: e.target.value })
-              }
-            />
+            <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed p-3">
+              <Upload className="h-4 w-4" />
+              Upload poster
+              <input hidden type="file" onChange={(e) => e.target.files && handlePosterUpload(e.target.files[0])} />
+            </label>
+
+            <div className="flex gap-2">
+              {["Technical", "Cultural", "Sports", "Academic"].map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setForm({ ...form, category: c as Category })}
+                  className={`rounded-full px-4 py-1.5 text-sm ${
+                    form.category === c
+                      ? "bg-orange-500 text-white"
+                      : "border text-orange-700"
+                  }`}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+
+            <Input placeholder="Event title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+            <Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
+            <Input placeholder="Time" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} />
+            <Input placeholder="Venue" value={form.venue} onChange={(e) => setForm({ ...form, venue: e.target.value })} />
+            <Input placeholder="Society name" value={form.society} onChange={(e) => setForm({ ...form, society: e.target.value })} />
+            <Textarea placeholder="Description" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </CardContent>
 
           <CardFooter className="gap-2">
-            <Button
-              variant="secondary"
-              disabled={!hasFormData}
-              onClick={() => saveEvent("Draft")}
-            >
-              <Save className="mr-1 h-4 w-4" />
-              Save Draft
+            <Button variant="secondary" onClick={() => saveEvent("Draft")}>
+              <Save className="h-4 w-4 mr-1" /> Save Draft
             </Button>
-            <Button
-              className="bg-orange-500 hover:bg-orange-600 text-white"
-              onClick={() => saveEvent("Published")}
-            >
-              <Sparkles className="mr-1 h-4 w-4" />
-              Publish
+            <Button onClick={() => saveEvent("Published")}>
+              <Sparkles className="h-4 w-4 mr-1" /> Publish
             </Button>
           </CardFooter>
         </Card>
@@ -331,22 +276,14 @@ const ManageEvents = () => {
           <CardHeader>
             <CardTitle>Edit Existing</CardTitle>
           </CardHeader>
-
-          <CardContent className="space-y-2">
+          <CardContent>
             {events.map((e) => (
-              <button
-                key={e.id}
-                onClick={() => {
-                  setEditingId(e.id);
-                  setForm(e);
-                }}
-                className="w-full rounded-lg border px-4 py-3 text-left hover:border-orange-400"
-              >
+              <div key={e.id} className="mb-2 rounded border p-3">
                 <div className="font-semibold">{e.title}</div>
                 <div className="text-xs text-muted-foreground">
-                  {e.date} • {e.venue}
+                  {e.date} • {e.category}
                 </div>
-              </button>
+              </div>
             ))}
           </CardContent>
         </Card>
