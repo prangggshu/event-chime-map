@@ -1,29 +1,22 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { CalendarRange, CheckCircle2, Edit3, MapPin, Plus, Save, Sparkles } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Upload, Save, Sparkles, Edit3 } from "lucide-react";
+import Tesseract from "tesseract.js";
+
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
 
-const demoEvents = [
-  {
-    id: "1",
-    title: "Tech Society Meetup",
-    date: "2024-09-20",
-    venue: "Auditorium 1",
-    status: "Draft",
-  },
-  {
-    id: "2",
-    title: "Cultural Night",
-    date: "2024-09-25",
-    venue: "Main Quad",
-    status: "Published",
-  },
-];
+/* ================= TYPES ================= */
 
 type EventForm = {
   title: string;
@@ -38,31 +31,114 @@ type EventItem = EventForm & {
   status: "Draft" | "Published";
 };
 
+/* ================= CONSTANTS ================= */
+
 const STORAGE_KEY = "manage-events:v1";
 const AUTH_ROLE_KEY = "auth:role";
-const DEFAULT_POSTER = "https://images.unsplash.com/photo-1489515217757-5fd1be406fef?w=600&h=400&fit=crop&auto=format&dpr=1";
+const DEFAULT_POSTER =
+  "https://images.unsplash.com/photo-1489515217757-5fd1be406fef?w=600&h=400&fit=crop&auto=format";
+
+/* ================= IMAGE PREPROCESSING ================= */
+
+const preprocessImage = async (file: File): Promise<File> => {
+  const bitmap = await createImageBitmap(file);
+  const canvas = document.createElement("canvas");
+
+  const scale = 2;
+  canvas.width = bitmap.width * scale;
+  canvas.height = bitmap.height * scale;
+
+  const ctx = canvas.getContext("2d")!;
+  ctx.scale(scale, scale);
+  ctx.drawImage(bitmap, 0, 0);
+
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const d = img.data;
+
+  for (let i = 0; i < d.length; i += 4) {
+    const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    const c = Math.min(255, Math.max(0, (gray - 128) * 1.5 + 128));
+    d[i] = d[i + 1] = d[i + 2] = c;
+  }
+
+  ctx.putImageData(img, 0, 0);
+
+  return new Promise((resolve) =>
+    canvas.toBlob(
+      (b) => resolve(new File([b!], file.name, { type: "image/png" })),
+      "image/png"
+    )
+  );
+};
+
+/* ================= OCR ================= */
+
+const runOCR = async (file: File) => {
+  const processed = await preprocessImage(file);
+
+  const res = await Tesseract.recognize(processed, "eng", {
+    psm: 4,
+    preserve_interword_spaces: "1",
+    tessedit_char_blacklist: "|_~`^",
+  } as any);
+
+  return res.data.text;
+};
+
+/* ================= CLEAN OCR TEXT ================= */
+
+const cleanOCRText = (text: string) =>
+  text
+    .replace(/[^\x20-\x7E\n]/g, "")
+    .replace(/[•●◆■]/g, "")
+    .replace(/[_|~`^]/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+/* ================= PARSER ================= */
+
+const fallbackParser = (text: string) => {
+  const lines = text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 3);
+
+  let title =
+    lines
+      .filter((l) => l.length < 60)
+      .sort((a, b) => b.length - a.length)[0] || "";
+
+  let date = "";
+  let venue = "";
+
+  const dateRegex =
+    /(\d{1,2}\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s*\d{4})/i;
+
+  for (const l of lines) {
+    if (!date && dateRegex.test(l)) date = l.match(dateRegex)![0];
+    if (
+      !venue &&
+      /(venue|campus|hall|auditorium|block|room)/i.test(l)
+    )
+      venue = l;
+  }
+
+  const description = lines.join(" ").slice(0, 200);
+
+  return { title, date, venue, description };
+};
+
+/* ================= COMPONENT ================= */
 
 const ManageEvents = () => {
-  const { toast } = useToast();
   const navigate = useNavigate();
+  const { toast } = useToast();
 
   const [events, setEvents] = useState<EventItem[]>(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed: EventItem[] = JSON.parse(stored).map((item: any) => ({
-          ...item,
-          posterUrl: item.posterUrl || DEFAULT_POSTER,
-        }));
-        return parsed;
-      }
-    } catch (error) {
-      console.error("Failed to read events from storage", error);
-    }
-    return demoEvents.map((event) => ({ ...event, description: "", posterUrl: DEFAULT_POSTER }));
+    const s = localStorage.getItem(STORAGE_KEY);
+    return s ? JSON.parse(s) : [];
   });
 
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<EventForm>({
     title: "",
     date: "",
@@ -71,268 +147,208 @@ const ManageEvents = () => {
     posterUrl: "",
   });
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
-    } catch (error) {
-      console.error("Failed to write events to storage", error);
-    }
-  }, [events]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [loadingOCR, setLoadingOCR] = useState(false);
 
-  const hasFormData = useMemo(() => {
-    return form.title.trim() !== "" || form.date.trim() !== "" || form.venue.trim() !== "" || form.description.trim() !== "";
-  }, [form]);
-
-  const editingEvent = useMemo(() => events.find((event) => event.id === editingId) || null, [editingId, events]);
+  /* ---------- AUTH ---------- */
 
   useEffect(() => {
-    const role = localStorage.getItem(AUTH_ROLE_KEY);
-    if (role !== "society") {
-      toast({
-        title: "Society login required",
-        description: "Log in as a society to post or edit events.",
-        variant: "destructive",
-      });
+    if (localStorage.getItem(AUTH_ROLE_KEY) !== "society") {
       navigate("/login?role=society", { replace: true });
     }
-  }, [navigate, toast]);
+  }, [navigate]);
 
-  const resetForm = useCallback(() => {
-    setForm({ title: "", date: "", venue: "", description: "", posterUrl: "" });
-    setEditingId(null);
-  }, []);
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
+  }, [events]);
 
-  const handleSelectEvent = useCallback((event: EventItem) => {
-    setEditingId(event.id);
-    setForm({
-      title: event.title,
-      date: event.date,
-      venue: event.venue,
-      description: event.description || "",
-      posterUrl: event.posterUrl || "",
-    });
-  }, []);
-
-  const handleNewEvent = useCallback(() => {
-    resetForm();
-  }, [resetForm]);
-
-  const upsertEvent = useCallback(
-    (status: EventItem["status"]) => {
-      if (status === "Published") {
-        if (!form.title || !form.date || !form.venue || !form.description) {
-          toast({
-            title: "Missing details",
-            description: "Fill title, date, venue, and description before publishing.",
-            variant: "destructive",
-          });
-          return;
-        }
-      }
-
-      const trimmedTitle = form.title.trim();
-      if (!trimmedTitle) {
-        toast({
-          title: "Add a title",
-          description: "A title is required to save an event.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const nextId = editingId ?? `${Date.now()}`;
-      const nextEvent: EventItem = {
-        id: nextId,
-        title: trimmedTitle,
-        date: form.date,
-        venue: form.venue,
-        description: form.description,
-        posterUrl: form.posterUrl.trim() || DEFAULT_POSTER,
-        status,
-      };
-
-      setEvents((prev) => {
-        const existingIndex = prev.findIndex((item) => item.id === nextId);
-        if (existingIndex >= 0) {
-          const copy = [...prev];
-          copy[existingIndex] = nextEvent;
-          return copy;
-        }
-        return [nextEvent, ...prev];
-      });
-
-      setEditingId(nextId);
-
-      toast({
-        title: status === "Published" ? "Event published" : "Draft saved",
-        description: status === "Published" ? "Your event is now live in this workspace." : "Draft stored locally.",
-      });
-    },
-    [editingId, form, toast],
+  const hasFormData = useMemo(
+    () => Object.values(form).some(Boolean),
+    [form]
   );
 
-  return (
-    <div className="min-h-screen bg-background">
-      <div className="border-b border-border/80 bg-gradient-to-r from-background via-background to-muted/40">
-        <div className="container mx-auto flex flex-col gap-4 px-4 py-10 lg:flex-row lg:items-center lg:justify-between">
-          <div className="space-y-3">
-            <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-primary">
-              <Sparkles className="h-3.5 w-3.5" />
-              Societies workspace
-            </div>
-            <div>
-              <h1 className="text-3xl font-extrabold tracking-tight text-foreground sm:text-4xl">Post & edit events</h1>
-              <p className="mt-2 text-base text-muted-foreground">
-                Create new listings, update details, and keep your society events in sync.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2 text-sm text-muted-foreground">
-              <div className="flex items-center gap-1">
-                <CheckCircle2 className="h-4 w-4 text-primary" />
-                Drafts auto-save locally.
-              </div>
-              <div className="flex items-center gap-1">
-                <CalendarRange className="h-4 w-4 text-primary" />
-                Publish to campus calendar.
-              </div>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button asChild variant="outline">
-              <Link to="/">Back to events</Link>
-            </Button>
-            <Button variant="gradient" className="gap-2" onClick={handleNewEvent}>
-              <Plus className="h-4 w-4" />
-              New event
-            </Button>
-          </div>
-        </div>
-      </div>
+  /* ---------- POSTER OCR ---------- */
 
-      <div className="container mx-auto grid gap-6 px-4 py-8 lg:grid-cols-[1.2fr_1fr]">
-        <Card className="shadow-card">
-          <CardHeader className="flex flex-row items-start justify-between">
-            <div className="space-y-1">
-              <CardTitle>Create or update an event</CardTitle>
-              <CardDescription>Save to draft; publish once details are ready.</CardDescription>
-            </div>
-            <Badge variant={editingEvent?.status === "Published" ? "secondary" : "outline"}>
-              {editingEvent ? editingEvent.status : "New"}
+  const handlePosterUpload = async (file: File) => {
+    setLoadingOCR(true);
+    setForm((p) => ({ ...p, posterUrl: URL.createObjectURL(file) }));
+
+    try {
+      const raw = await runOCR(file);
+      const cleaned = cleanOCRText(raw);
+
+      console.log("RAW OCR:", raw);
+      console.log("CLEANED OCR:", cleaned);
+
+      const extracted = fallbackParser(cleaned);
+
+      setForm((p) => ({
+        ...p,
+        title: extracted.title.length > 5 ? extracted.title : p.title,
+        venue: extracted.venue || p.venue,
+        description: extracted.description || p.description,
+      }));
+
+      toast({
+        title: "Poster scanned",
+        description: "Fields auto-filled (review before publishing)",
+      });
+    } catch {
+      toast({
+        title: "OCR failed",
+        description: "Fill details manually",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingOCR(false);
+    }
+  };
+
+  /* ---------- SAVE ---------- */
+
+  const saveEvent = (status: EventItem["status"]) => {
+    if (
+      status === "Published" &&
+      (!form.title || !form.date || !form.venue)
+    ) {
+      toast({
+        title: "Missing fields",
+        description: "Complete all details before publishing",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const id = editingId ?? Date.now().toString();
+
+    const next: EventItem = {
+      id,
+      ...form,
+      posterUrl: form.posterUrl || DEFAULT_POSTER,
+      status,
+    };
+
+    setEvents((prev) =>
+      prev.some((e) => e.id === id)
+        ? prev.map((e) => (e.id === id ? next : e))
+        : [next, ...prev]
+    );
+
+    setEditingId(id);
+    toast({ title: status === "Published" ? "Event published" : "Draft saved" });
+  };
+
+  /* ================= UI ================= */
+
+  return (
+    <div className="min-h-screen bg-orange-50 p-8 font-playfair">
+      <h1 className="mb-6 text-4xl font-bold text-orange-900">
+        Manage Events
+      </h1>
+
+      <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
+        {/* FORM */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Create / Edit Event</CardTitle>
+            <Badge className="w-fit bg-orange-100 text-orange-700">
+              AI-assisted
             </Badge>
           </CardHeader>
+
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-foreground" htmlFor="event-title">Event title</label>
-              <Input
-                id="event-title"
-                placeholder="Hackathon kickoff"
-                value={form.title}
-                onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
+            <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-orange-300 p-3 hover:bg-orange-100">
+              <Upload className="h-4 w-4" />
+              Upload poster (OCR)
+              <input
+                hidden
+                type="file"
+                accept="image/*"
+                onChange={(e) =>
+                  e.target.files && handlePosterUpload(e.target.files[0])
+                }
               />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-foreground" htmlFor="event-date">Date</label>
-                <Input
-                  id="event-date"
-                  type="date"
-                  value={form.date}
-                  onChange={(e) => setForm((prev) => ({ ...prev, date: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-foreground" htmlFor="event-venue">Venue</label>
-                <div className="relative">
-                  <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    id="event-venue"
-                    placeholder="Main auditorium"
-                    className="pl-9"
-                    value={form.venue}
-                    onChange={(e) => setForm((prev) => ({ ...prev, venue: e.target.value }))}
-                  />
-                </div>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-foreground" htmlFor="event-poster">Event cover image (URL)</label>
-              <Input
-                id="event-poster"
-                type="url"
-                placeholder="https://images.unsplash.com/..."
-                value={form.posterUrl}
-                onChange={(e) => setForm((prev) => ({ ...prev, posterUrl: e.target.value }))}
-              />
-              <p className="text-xs text-muted-foreground">Paste an image URL; we fallback to a default cover if left empty.</p>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-foreground" htmlFor="event-description">Description</label>
-              <Textarea
-                id="event-description"
-                placeholder="Tell attendees what to expect."
-                rows={4}
-                value={form.description}
-                onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
-              />
-            </div>
+            </label>
+
+            {loadingOCR && (
+              <p className="text-sm text-orange-600">
+                Scanning poster…
+              </p>
+            )}
+
+            <Input
+              placeholder="Event title"
+              value={form.title}
+              onChange={(e) =>
+                setForm({ ...form, title: e.target.value })
+              }
+            />
+            <Input
+              type="date"
+              value={form.date}
+              onChange={(e) =>
+                setForm({ ...form, date: e.target.value })
+              }
+            />
+            <Input
+              placeholder="Venue"
+              value={form.venue}
+              onChange={(e) =>
+                setForm({ ...form, venue: e.target.value })
+              }
+            />
+            <Textarea
+              rows={4}
+              placeholder="Description"
+              value={form.description}
+              onChange={(e) =>
+                setForm({ ...form, description: e.target.value })
+              }
+            />
           </CardContent>
-          <CardFooter className="flex flex-wrap gap-3">
-            <Button variant="secondary" className="gap-2" disabled={!hasFormData} onClick={() => upsertEvent("Draft")}>
-              <Save className="h-4 w-4" />
-              Save draft
+
+          <CardFooter className="gap-2">
+            <Button
+              variant="secondary"
+              disabled={!hasFormData}
+              onClick={() => saveEvent("Draft")}
+            >
+              <Save className="mr-1 h-4 w-4" />
+              Save Draft
             </Button>
             <Button
-              className="gap-2"
-              disabled={!form.title || !form.date || !form.venue || !form.description}
-              onClick={() => upsertEvent("Published")}
+              className="bg-orange-500 hover:bg-orange-600 text-white"
+              onClick={() => saveEvent("Published")}
             >
-              <Sparkles className="h-4 w-4" />
-              Publish event
+              <Sparkles className="mr-1 h-4 w-4" />
+              Publish
             </Button>
           </CardFooter>
         </Card>
 
-        <Card className="shadow-card">
-          <CardHeader className="flex flex-row items-start justify-between">
-            <div>
-              <CardTitle>Edit existing</CardTitle>
-              <CardDescription>Tap an event to open it in the form.</CardDescription>
-            </div>
-            <Badge variant="outline">{events.length} events</Badge>
+        {/* LIST */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Edit Existing</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {events.length === 0 && <p className="text-sm text-muted-foreground">No events yet. Create your first event.</p>}
-            {events.map((event) => (
+
+          <CardContent className="space-y-2">
+            {events.map((e) => (
               <button
-                type="button"
-                key={event.id}
-                onClick={() => handleSelectEvent(event)}
-                className={
-                  "flex w-full items-center justify-between rounded-xl border border-border/70 bg-card/60 px-4 py-3 text-left shadow-sm transition hover:border-primary/40 hover:shadow-md" +
-                  (editingId === event.id ? " border-primary/50 shadow-md" : "")
-                }
+                key={e.id}
+                onClick={() => {
+                  setEditingId(e.id);
+                  setForm(e);
+                }}
+                className="w-full rounded-lg border px-4 py-3 text-left hover:border-orange-400"
               >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                    <Edit3 className="h-4 w-4 text-primary" />
-                    {event.title || "Untitled event"}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {event.date || "No date"} • {event.venue || "No venue"}
-                  </div>
+                <div className="font-semibold">{e.title}</div>
+                <div className="text-xs text-muted-foreground">
+                  {e.date} • {e.venue}
                 </div>
-                <Badge variant={event.status === "Published" ? "secondary" : "outline"}>{event.status}</Badge>
               </button>
             ))}
           </CardContent>
-          <CardFooter className="flex justify-end gap-2">
-            <Button asChild variant="link">
-              <Link to="/">Preview site</Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link to="/login?role=society">Switch account</Link>
-            </Button>
-          </CardFooter>
         </Card>
       </div>
     </div>

@@ -100,10 +100,10 @@ const Index = () => {
       )}
       
       {/* Footer */}
-      <footer className="border-t border-border bg-muted/30 py-8">
-        <div className="container mx-auto px-4 text-center">
+      <footer className="border-t border-border bg-muted/30 py-5">
+        <div className="container mx-auto px-2 text-center">
           <p className="text-sm text-muted-foreground">
-            © 2024 Events Everywhere. Your unified campus event portal.
+            Made by Arundhati
           </p>
         </div>
       </footer>

@@ -1,118 +1,147 @@
-import { useState } from 'react';
-import { Calendar } from './ui/calendar';
-import { Link } from 'react-router-dom';
-import { Event, categoryColors, categoryLabels } from '@/data/events';
-import { format, parseISO, isSameDay } from 'date-fns';
-import { Badge } from './ui/badge';
-import { Clock, MapPin, Users } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import {
+  format,
+  parseISO,
+  isSameDay,
+  startOfMonth,
+  endOfMonth,
+  eachDayOfInterval,
+  addMonths,
+  subMonths,
+} from "date-fns";
+import { useState } from "react";
+import { Event, categoryLabels } from "@/data/events";
+import { Clock, MapPin, ChevronLeft, ChevronRight } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface CalendarViewProps {
   events: Event[];
 }
 
 const CalendarView = ({ events }: CalendarViewProps) => {
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [hoveredDate, setHoveredDate] = useState<string | null>(null);
 
-  const eventDates = events.map((event) => parseISO(event.date));
+  const monthDays = eachDayOfInterval({
+    start: startOfMonth(currentMonth),
+    end: endOfMonth(currentMonth),
+  });
 
-  const eventsOnSelectedDate = selectedDate
-    ? events.filter((event) => isSameDay(parseISO(event.date), selectedDate))
-    : [];
+  const eventsForDate = (date: Date) =>
+    events.filter((e) => isSameDay(parseISO(e.date), date));
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="grid gap-8 lg:grid-cols-[400px_1fr]">
-        {/* Calendar */}
-        <div className="rounded-2xl border border-border bg-card p-6 shadow-card">
-          <h2 className="mb-4 text-lg font-bold text-card-foreground">Event Calendar</h2>
-          <Calendar
-            mode="single"
-            selected={selectedDate}
-            onSelect={setSelectedDate}
-            modifiers={{
-              hasEvent: eventDates,
-            }}
-            modifiersStyles={{
-              hasEvent: {
-                fontWeight: 'bold',
-                backgroundColor: 'hsl(var(--primary) / 0.15)',
-                borderRadius: '50%',
-              },
-            }}
-            className="rounded-lg pointer-events-auto"
-          />
-          <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
-            <div className="h-3 w-3 rounded-full bg-primary/20" />
-            <span>Days with events</span>
-          </div>
-        </div>
+    <div className="container mx-auto px-4 py-8 font-playfair">
+      <h1 className="mb-1 text-2xl font-extrabold">Event Calendar</h1>
+      <p className="mb-6 text-muted-foreground">
+        Hover over dates to preview events
+      </p>
 
-        {/* Events for selected date */}
-        <div>
-          <h2 className="mb-6 text-xl font-bold text-foreground">
-            {selectedDate
-              ? `Events on ${format(selectedDate, 'MMMM dd, yyyy')}`
-              : 'Select a date'}
+      <div className="rounded-2xl border bg-card p-6 shadow-card">
+        {/* MONTH HEADER */}
+        <div className="mb-4 flex items-center justify-between">
+          <button
+            onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
+            className="rounded-lg border p-2 hover:bg-muted"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+
+          <h2 className="text-lg font-bold">
+            {format(currentMonth, "MMMM yyyy")}
           </h2>
 
-          {eventsOnSelectedDate.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-border bg-muted/30 p-12 text-center">
-              <p className="text-muted-foreground">
-                No events scheduled for this date
-              </p>
+          <button
+            onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
+            className="rounded-lg border p-2 hover:bg-muted"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* WEEK HEADER */}
+        <div className="mb-2 grid grid-cols-7 text-xs text-muted-foreground">
+          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+            <div key={d} className="text-center">
+              {d}
             </div>
-          ) : (
-            <div className="space-y-4">
-              {eventsOnSelectedDate.map((event) => (
-                <Link
-                  key={event.id}
-                  to={`/events/${event.id}`}
-                  className="flex gap-4 rounded-2xl border border-border bg-card p-4 shadow-card transition-all hover:shadow-card-hover"
+          ))}
+        </div>
+
+        {/* CALENDAR GRID */}
+        <div className="grid grid-cols-7 gap-4">
+          {monthDays.map((day) => {
+            const dayEvents = eventsForDate(day);
+            const hasEvent = dayEvents.length > 0;
+            const key = day.toISOString();
+
+            return (
+              <div
+                key={key}
+                className="relative h-[100px]"
+                style={{ perspective: "1000px" }}
+                onMouseEnter={() => hasEvent && setHoveredDate(key)}
+                onMouseLeave={() => setHoveredDate(null)}
+              >
+                {/* FLIP CARD */}
+                <div
+                  className="relative h-full w-full transition-transform duration-500"
+                  style={{
+                    transformStyle: "preserve-3d",
+                    transform:
+                      hoveredDate === key
+                        ? "rotateY(180deg)"
+                        : "rotateY(0deg)",
+                  }}
                 >
-                  <img
-                    src={event.posterUrl}
-                    alt={event.title}
-                    className="h-24 w-32 rounded-lg object-cover"
-                  />
-                  <div className="flex-1">
-                    <div className="mb-2 flex items-start justify-between">
-                      <div>
-                        <Badge
-                          className={cn(
-                            'mb-2 border-0 text-xs font-semibold text-primary-foreground',
-                            categoryColors[event.category]
-                          )}
-                        >
-                          {categoryLabels[event.category]}
-                        </Badge>
-                        <h3 className="font-bold text-card-foreground">
-                          {event.title}
-                        </h3>
-                        <p className="text-sm text-muted-foreground">
-                          {event.society}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-                      <div className="flex items-center gap-1">
-                        <Clock className="h-3.5 w-3.5" />
-                        {event.time}
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <MapPin className="h-3.5 w-3.5" />
-                        {event.venue}
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Users className="h-3.5 w-3.5" />
-                        {event.interestedCount} interested
-                      </div>
-                    </div>
+                  {/* FRONT */}
+                  <div
+                    className={cn(
+                      "absolute inset-0 flex flex-col items-center justify-center rounded-xl border",
+                      hasEvent
+                        ? "bg-orange-500 text-white font-semibold"
+                        : "bg-white text-foreground"
+                    )}
+                    style={{ backfaceVisibility: "hidden" }}
+                  >
+                    <span className="text-lg">{format(day, "d")}</span>
+                    {hasEvent && (
+                      <span className="mt-1 h-1.5 w-1.5 rounded-full bg-white" />
+                    )}
                   </div>
-                </Link>
-              ))}
-            </div>
-          )}
+
+                  {/* BACK — ONLY AFTER FLIP */}
+                  {hasEvent && (
+                    <div
+                      className="absolute inset-0 rounded-xl bg-orange-600 text-white p-3 text-xs flex items-center justify-center"
+                      style={{
+                        transform: "rotateY(180deg)",
+                        backfaceVisibility: "hidden",
+                      }}
+                    >
+                      {dayEvents.slice(0, 1).map((event) => (
+                        <div key={event.id} className="space-y-1 text-center">
+                          <div className="text-[10px] uppercase opacity-80">
+                            {categoryLabels[event.category]}
+                          </div>
+                          <div className="font-bold leading-tight">
+                            {event.title}
+                          </div>
+                          <div className="flex items-center justify-center gap-1 opacity-90">
+                            <Clock className="h-3 w-3" />
+                            {event.time}
+                          </div>
+                          <div className="flex items-center justify-center gap-1 opacity-90">
+                            <MapPin className="h-3 w-3" />
+                            {event.venue}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

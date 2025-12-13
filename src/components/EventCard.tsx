@@ -16,18 +16,14 @@ const EventCard = ({ event }: EventCardProps) => {
   const [interestCount, setInterestCount] = useState(event.interestedCount);
 
   const handleInterestClick = () => {
-    if (isInterested) {
-      setInterestCount((prev) => prev - 1);
-    } else {
-      setInterestCount((prev) => prev + 1);
-    }
+    setInterestCount(prev => (isInterested ? prev - 1 : prev + 1));
     setIsInterested(!isInterested);
   };
 
   const formattedDate = format(parseISO(event.date), 'MMM dd, yyyy');
 
   return (
-    <article className="group overflow-hidden rounded-2xl border border-border bg-card shadow-card transition-all duration-300 hover:shadow-card-hover hover:-translate-y-1">
+    <article className="group overflow-hidden rounded-2xl border border-border bg-card shadow-card transition-all duration-300 hover:shadow-card-hover hover:-translate-y-1 font-playfair">
       {/* Image */}
       <Link to={`/events/${event.id}`} className="relative block aspect-[16/10] overflow-hidden">
         <img
@@ -35,12 +31,12 @@ const EventCard = ({ event }: EventCardProps) => {
           alt={event.title}
           className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-foreground/60 to-transparent" />
-        
-        {/* Category Badge */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+
+        {/* Category */}
         <Badge
           className={cn(
-            'absolute left-4 top-4 border-0 text-xs font-semibold text-primary-foreground',
+            'absolute left-4 top-4 border-0 text-xs font-semibold text-white',
             categoryColors[event.category]
           )}
         >
@@ -49,7 +45,7 @@ const EventCard = ({ event }: EventCardProps) => {
 
         {/* Society */}
         <div className="absolute bottom-4 left-4">
-          <span className="text-sm font-medium text-primary-foreground/90">
+          <span className="text-sm font-medium text-white/90">
             {event.society}
           </span>
         </div>
@@ -58,7 +54,7 @@ const EventCard = ({ event }: EventCardProps) => {
       {/* Content */}
       <div className="p-5">
         <Link to={`/events/${event.id}`} className="block">
-          <h3 className="mb-2 text-lg font-bold text-card-foreground line-clamp-1 group-hover:text-primary transition-colors">
+          <h3 className="mb-2 text-lg font-bold line-clamp-1 transition-colors group-hover:text-orange-600">
             {event.title}
           </h3>
           <p className="mb-4 text-sm text-muted-foreground line-clamp-2">
@@ -66,7 +62,7 @@ const EventCard = ({ event }: EventCardProps) => {
           </p>
         </Link>
 
-        {/* Meta Info */}
+        {/* Meta */}
         <div className="mb-4 flex flex-wrap gap-3 text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5">
             <Calendar className="h-3.5 w-3.5" />
@@ -91,12 +87,17 @@ const EventCard = ({ event }: EventCardProps) => {
           </div>
 
           <Button
-            variant={isInterested ? 'interest-active' : 'interest'}
             size="sm"
             onClick={handleInterestClick}
-            className="gap-1.5"
+            className={cn(
+              'gap-1.5 px-3 py-1.5 text-xs font-playfair transition-colors',
+              isInterested
+                ? 'bg-orange-600 text-white hover:bg-orange-700'
+                : 'bg-orange-100 text-orange-700 hover:bg-orange-200',
+              'focus-visible:ring-orange-400'
+            )}
           >
-            <Heart className={cn('h-4 w-4', isInterested && 'fill-current')} />
+            <Heart className={cn('h-3.5 w-3.5', isInterested && 'fill-current')} />
             {isInterested ? 'Interested!' : "I'm Interested"}
           </Button>
         </div>

@@ -15,12 +15,27 @@ const NavLink = forwardRef<HTMLAnchorElement, NavLinkCompatProps>(
         ref={ref}
         to={to}
         className={({ isActive, isPending }) =>
-          cn(className, isActive && activeClassName, isPending && pendingClassName)
+          cn(
+            // base style (font + neutral color)
+            "font-playfair font-semibold tracking-wide text-gray-600 hover:text-orange-600 transition-colors",
+
+            // external override
+            className,
+
+            // active state (orange highlight)
+            isActive &&
+              (activeClassName ??
+                "text-orange-600 border-b-2 border-orange-500"),
+
+            // pending state (soft orange)
+            isPending &&
+              (pendingClassName ?? "text-orange-400")
+          )
         }
         {...props}
       />
     );
-  },
+  }
 );
 
 NavLink.displayName = "NavLink";
