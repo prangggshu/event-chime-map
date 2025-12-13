@@ -72,10 +72,7 @@ const Header = ({ onViewChange, currentView }: HeaderProps) => {
               size="sm"
               className="border-orange-500 text-orange-600 hover:bg-orange-50 font-semibold tracking-wide"
             >
-              <Link to="/login" className="gap-2">
-                <LogIn className="h-4 w-4" />
-                Login
-              </Link>
+              
             </Button>
 
             <Button
