@@ -42,7 +42,7 @@ export const events: Event[] = [
     id: '3',
     title: 'Inter-College Basketball Tournament',
     description: 'Watch the best college teams compete! Exciting matches, skilled players, and thrilling moments await basketball fans.',
-    date: '2025-12-18',
+    date: '2025-12-20',
     time: '02:00 PM',
     venue: 'KSAC Indoor Games',
     society: 'KSAC Sports Club',

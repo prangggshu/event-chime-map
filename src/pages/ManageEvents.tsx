@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Upload, Save, Sparkles } from "lucide-react";
+import { Upload, Save, Sparkles, Trash2 } from "lucide-react";
 import Tesseract from "tesseract.js";
 
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,8 @@ type EventForm = {
   category: Category;
   society: string;
   description: string;
-  posterUrl: string;
+  posterUrl: string; // OCR
+  coverUrl: string;  // display image
 };
 
 type EventItem = EventForm & {
@@ -39,7 +40,7 @@ type EventItem = EventForm & {
 
 const STORAGE_KEY = "manage-events:v1";
 const AUTH_ROLE_KEY = "auth:role";
-const DEFAULT_POSTER =
+const DEFAULT_COVER =
   "https://images.unsplash.com/photo-1489515217757-5fd1be406fef?w=600&h=400&fit=crop&auto=format";
 
 /* ================= OCR HELPERS ================= */
@@ -113,6 +114,7 @@ const ManageEvents = () => {
     society: "",
     description: "",
     posterUrl: "",
+    coverUrl: "",
   });
 
   const [loadingOCR, setLoadingOCR] = useState(false);
@@ -134,16 +136,10 @@ const ManageEvents = () => {
     [form]
   );
 
-  /* ---------- OCR ---------- */
+  /* ---------- POSTER OCR ---------- */
 
   const handlePosterUpload = async (file: File) => {
     setLoadingOCR(true);
-    const url = URL.createObjectURL(file);
-setForm((p) => ({
-  ...p,
-  posterUrl: url,
-  coverUrl: url, // use poster as display image initially
-}));
 
     try {
       const cleaned = cleanOCRText(await runOCR(file));
@@ -151,6 +147,7 @@ setForm((p) => ({
 
       setForm((p) => ({
         ...p,
+        posterUrl: URL.createObjectURL(file),
         title: extracted.title || p.title,
         date: normalizeDate(extracted.date) || p.date,
         time: extracted.time || p.time,
@@ -171,7 +168,7 @@ setForm((p) => ({
     if (!form.title || !form.date || !form.venue) {
       toast({
         title: "Missing fields",
-        description: "Please complete required fields",
+        description: "Title, Date and Venue are required",
         variant: "destructive",
       });
       return;
@@ -180,19 +177,32 @@ setForm((p) => ({
     const next: EventItem = {
       id: Date.now().toString(),
       ...form,
-      posterUrl: form.posterUrl || DEFAULT_POSTER,
+      coverUrl: form.coverUrl || DEFAULT_COVER,
       status,
     };
 
     setEvents((p) => [next, ...p]);
-    toast({ title: status === "Published" ? "Event published" : "Draft saved" });
+    setForm({
+      title: "",
+      date: "",
+      time: "",
+      venue: "",
+      category: "",
+      society: "",
+      description: "",
+      posterUrl: "",
+      coverUrl: "",
+    });
+
+    toast({
+      title: status === "Published" ? "Event published" : "Draft saved",
+    });
   };
 
   /* ================= UI ================= */
 
   return (
     <div className="min-h-screen bg-orange-50 p-8 font-playfair">
-
       {/* HEADER */}
       <div className="mb-8 flex items-center gap-4">
         <button
@@ -207,7 +217,6 @@ setForm((p) => ({
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
-
         {/* FORM */}
         <Card>
           <CardHeader>
@@ -215,33 +224,67 @@ setForm((p) => ({
           </CardHeader>
 
           <CardContent className="space-y-4">
-            {form.posterUrl && (
+            {/* PREVIEW */}
+            {form.coverUrl && (
               <div className="relative overflow-hidden rounded-xl border">
-                <img src={form.posterUrl} className="h-52 w-full object-cover" />
+                <img
+                  src={form.coverUrl}
+                  className="h-52 w-full object-cover"
+                />
+
                 {form.category && (
-                  <span className="absolute left-3 top-3 rounded-full bg-blue-500 px-3 py-1 text-xs text-white">
+                  <span className="absolute left-3 top-3 rounded-full bg-orange-500 px-3 py-1 text-xs text-white">
                     {form.category}
                   </span>
                 )}
+
                 {form.society && (
-                  <span className="absolute bottom-3 left-3 text-sm text-white">
+                  <span className="absolute bottom-3 left-3 text-sm font-medium text-white">
                     {form.society}
                   </span>
                 )}
               </div>
             )}
 
+            {/* COVER IMAGE */}
             <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed p-3">
               <Upload className="h-4 w-4" />
-              Upload poster
-              <input hidden type="file" onChange={(e) => e.target.files && handlePosterUpload(e.target.files[0])} />
+              Upload display image
+              <input
+                hidden
+                type="file"
+                accept="image/*"
+                onChange={(e) =>
+                  e.target.files &&
+                  setForm((p) => ({
+                    ...p,
+                    coverUrl: URL.createObjectURL(e.target.files![0]),
+                  }))
+                }
+              />
             </label>
 
+            {/* POSTER OCR */}
+            <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed p-3">
+              <Upload className="h-4 w-4" />
+              Upload poster (OCR)
+              <input
+                hidden
+                type="file"
+                onChange={(e) =>
+                  e.target.files && handlePosterUpload(e.target.files[0])
+                }
+              />
+            </label>
+
+            {/* CATEGORY */}
             <div className="flex gap-2">
               {["Technical", "Cultural", "Sports", "Academic"].map((c) => (
                 <button
                   key={c}
-                  onClick={() => setForm({ ...form, category: c as Category })}
+                  onClick={() =>
+                    setForm({ ...form, category: c as Category })
+                  }
                   className={`rounded-full px-4 py-1.5 text-sm ${
                     form.category === c
                       ? "bg-orange-500 text-white"
@@ -253,35 +296,79 @@ setForm((p) => ({
               ))}
             </div>
 
-            <Input placeholder="Event title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
-            <Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
-            <Input placeholder="Time" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} />
-            <Input placeholder="Venue" value={form.venue} onChange={(e) => setForm({ ...form, venue: e.target.value })} />
-            <Input placeholder="Society name" value={form.society} onChange={(e) => setForm({ ...form, society: e.target.value })} />
-            <Textarea placeholder="Description" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+            {/* EDITABLE FIELDS */}
+            <Input
+              placeholder="Event title"
+              value={form.title}
+              onChange={(e) =>
+                setForm({ ...form, title: e.target.value })
+              }
+            />
+            <Input
+              type="date"
+              value={form.date}
+              onChange={(e) =>
+                setForm({ ...form, date: e.target.value })
+              }
+            />
+            <Input
+              placeholder="Time"
+              value={form.time}
+              onChange={(e) =>
+                setForm({ ...form, time: e.target.value })
+              }
+            />
+            <Input
+              placeholder="Venue"
+              value={form.venue}
+              onChange={(e) =>
+                setForm({ ...form, venue: e.target.value })
+              }
+            />
+            <Input
+              placeholder="Society name"
+              value={form.society}
+              onChange={(e) =>
+                setForm({ ...form, society: e.target.value })
+              }
+            />
+            <Textarea
+              placeholder="Description"
+              value={form.description}
+              onChange={(e) =>
+                setForm({ ...form, description: e.target.value })
+              }
+            />
           </CardContent>
 
           <CardFooter className="gap-2">
             <Button variant="secondary" onClick={() => saveEvent("Draft")}>
-              <Save className="h-4 w-4 mr-1" /> Save Draft
+              <Save className="mr-1 h-4 w-4" />
+              Save Draft
             </Button>
             <Button onClick={() => saveEvent("Published")}>
-              <Sparkles className="h-4 w-4 mr-1" /> Publish
+              <Sparkles className="mr-1 h-4 w-4" />
+              Publish
             </Button>
           </CardFooter>
         </Card>
 
-        {/* LIST */}
+        {/* EXISTING EVENTS */}
         <Card>
           <CardHeader>
             <CardTitle>Edit Existing</CardTitle>
           </CardHeader>
           <CardContent>
+            {events.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                No events created yet
+              </p>
+            )}
             {events.map((e) => (
               <div key={e.id} className="mb-2 rounded border p-3">
                 <div className="font-semibold">{e.title}</div>
                 <div className="text-xs text-muted-foreground">
-                  {e.date} • {e.category}
+                  {e.date} • {e.category} • {e.status}
                 </div>
               </div>
             ))}
