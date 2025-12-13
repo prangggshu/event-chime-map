@@ -30,9 +30,9 @@ const mapStoredToEvent = (item: any): Event => ({
   date: item.date || new Date().toISOString().slice(0, 10),
   time: "All day",
   venue: item.venue || "TBD",
-  society: "Your Society",
+  society: item.society || "Your Society",
   category: "academic",
-  posterUrl: item.posterUrl || DEFAULT_POSTER,
+  posterUrl: item.coverUrl || item.posterUrl || DEFAULT_POSTER,
   interestedCount: 0,
 });
 
