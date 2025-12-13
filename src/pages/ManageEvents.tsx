@@ -259,23 +259,14 @@ const ManageEvents = () => {
               </div>
             )}
 
-            {/* COVER IMAGE */}
-            <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed p-3">
-              <Upload className="h-4 w-4" />
-              Upload display image
-              <input
-                hidden
-                type="file"
-                accept="image/*"
-                onChange={(e) =>
-                  e.target.files &&
-                  setForm((p) => ({
-                    ...p,
-                    coverUrl: URL.createObjectURL(e.target.files![0]),
-                  }))
-                }
-              />
-            </label>
+            {/* COVER IMAGE URL */}
+            <Input
+              placeholder="Display image URL"
+              value={form.coverUrl}
+              onChange={(e) =>
+                setForm({ ...form, coverUrl: e.target.value })
+              }
+            />
 
             {/* POSTER OCR */}
             <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed p-3">

@@ -1,23 +1,60 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Calendar, Clock, MapPin, Users, Heart } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
-import { Event, categoryLabels, categoryColors } from '@/data/events';
+import { Event, EventCategory, categoryLabels, categoryColors } from '@/data/events';
 import { cn } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
 
 interface EventCardProps {
   event: Event;
+  onEventClick?: (category: EventCategory) => void;
 }
 
-const EventCard = ({ event }: EventCardProps) => {
+const INTERESTED_EVENTS_KEY = 'interested-events:v1';
+
+type InterestedData = Record<string, { interested: boolean; count: number }>;
+
+const EventCard = ({ event, onEventClick }: EventCardProps) => {
   const [isInterested, setIsInterested] = useState(false);
   const [interestCount, setInterestCount] = useState(event.interestedCount);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const stored = localStorage.getItem(INTERESTED_EVENTS_KEY);
+      if (stored) {
+        const data: InterestedData = JSON.parse(stored);
+        if (data[event.id]) {
+          setIsInterested(data[event.id].interested);
+          setInterestCount(data[event.id].count);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load interested state', error);
+    }
+  }, [event.id]);
+
   const handleInterestClick = () => {
-    setInterestCount(prev => (isInterested ? prev - 1 : prev + 1));
-    setIsInterested(!isInterested);
+    const newIsInterested = !isInterested;
+    const newCount = newIsInterested ? interestCount + 1 : interestCount - 1;
+    
+    setIsInterested(newIsInterested);
+    setInterestCount(newCount);
+
+    try {
+      const stored = localStorage.getItem(INTERESTED_EVENTS_KEY);
+      const data: InterestedData = stored ? JSON.parse(stored) : {};
+      data[event.id] = { interested: newIsInterested, count: newCount };
+      localStorage.setItem(INTERESTED_EVENTS_KEY, JSON.stringify(data));
+    } catch (error) {
+      console.error('Failed to save interested state', error);
+    }
+  };
+
+  const handleEventClick = () => {
+    onEventClick?.(event.category);
   };
 
   const formattedDate = format(parseISO(event.date), 'MMM dd, yyyy');
@@ -25,7 +62,7 @@ const EventCard = ({ event }: EventCardProps) => {
   return (
     <article className="group overflow-hidden rounded-2xl border border-border bg-card shadow-card transition-all duration-300 hover:shadow-card-hover hover:-translate-y-1 font-playfair">
       {/* Image */}
-      <Link to={`/events/${event.id}`} className="relative block aspect-[16/10] overflow-hidden">
+      <Link to={`/events/${event.id}`} onClick={handleEventClick} className="relative block aspect-[16/10] overflow-hidden">
         <img
           src={event.posterUrl}
           alt={event.title}
@@ -53,7 +90,7 @@ const EventCard = ({ event }: EventCardProps) => {
 
       {/* Content */}
       <div className="p-5">
-        <Link to={`/events/${event.id}`} className="block">
+        <Link to={`/events/${event.id}`} onClick={handleEventClick} className="block">
           <h3 className="mb-2 text-lg font-bold line-clamp-1 transition-colors group-hover:text-orange-600">
             {event.title}
           </h3>

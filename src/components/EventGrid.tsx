@@ -1,12 +1,13 @@
-import { Event } from '@/data/events';
+import { Event, EventCategory } from '@/data/events';
 import EventCard from './EventCard';
 import { CalendarX } from 'lucide-react';
 
 interface EventGridProps {
   events: Event[];
+  onEventClick?: (category: EventCategory) => void;
 }
 
-const EventGrid = ({ events }: EventGridProps) => {
+const EventGrid = ({ events, onEventClick }: EventGridProps) => {
   if (events.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center font-playfair">
@@ -34,7 +35,7 @@ const EventGrid = ({ events }: EventGridProps) => {
             className="animate-fade-up"
             style={{ animationDelay: `${index * 0.05}s` }}
           >
-            <EventCard event={event} />
+            <EventCard event={event} onEventClick={onEventClick} />
           </div>
         ))}
       </div>
