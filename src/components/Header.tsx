@@ -1,6 +1,7 @@
-import { CalendarDays, MapPin, Sparkles, LogIn } from 'lucide-react';
+import { CalendarDays, MapPin, Sparkles, LogIn, LogOut } from 'lucide-react';
 import { Button } from './ui/button';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { isAuthenticated, logout } from '@/lib/auth';
 
 interface HeaderProps {
   onViewChange: (view: 'grid' | 'calendar') => void;
@@ -8,9 +9,17 @@ interface HeaderProps {
 }
 
 const Header = ({ onViewChange, currentView }: HeaderProps) => {
+  const navigate = useNavigate();
   const isSociety =
     typeof window !== 'undefined' &&
     localStorage.getItem('auth:role') === 'society';
+
+  const authed = typeof window !== 'undefined' && isAuthenticated();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login', { replace: true });
+  };
 
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-lg font-playfair">
@@ -66,17 +75,29 @@ const Header = ({ onViewChange, currentView }: HeaderProps) => {
 
           {/* ACTIONS */}
           <div className="flex items-center gap-2">
-            <Button
-              asChild
-              variant="outline"
-              size="sm"
-              className="border-orange-500 text-orange-600 hover:bg-orange-50 font-semibold tracking-wide"
-            >
-              <Link to="/login" className="gap-2">
-                <LogIn className="h-4 w-4" />
-                Login
-              </Link>
-            </Button>
+            {authed ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleLogout}
+                className="border-orange-500 text-orange-600 hover:bg-orange-50 font-semibold tracking-wide gap-2"
+              >
+                <LogOut className="h-4 w-4" />
+                Logout
+              </Button>
+            ) : (
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className="border-orange-500 text-orange-600 hover:bg-orange-50 font-semibold tracking-wide"
+              >
+                <Link to="/login" className="gap-2">
+                  <LogIn className="h-4 w-4" />
+                  Login
+                </Link>
+              </Button>
+            )}
 
             <Button
               asChild

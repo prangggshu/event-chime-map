@@ -118,6 +118,12 @@ const ManageEvents = () => {
   });
 
   const [loadingOCR, setLoadingOCR] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const deleteEvent = (id: string) => {
+    setEvents((prev) => prev.filter((e) => e.id !== id));
+    toast({ title: "Event deleted" });
+  };
 
   /* ---------- AUTH ---------- */
 
@@ -175,13 +181,19 @@ const ManageEvents = () => {
     }
 
     const next: EventItem = {
-      id: Date.now().toString(),
+      id: editingId ?? Date.now().toString(),
       ...form,
       coverUrl: form.coverUrl || DEFAULT_COVER,
       status,
     };
 
-    setEvents((p) => [next, ...p]);
+    setEvents((p) => {
+      if (editingId) {
+        return p.map((ev) => (ev.id === editingId ? next : ev));
+      }
+      return [next, ...p];
+    });
+
     setForm({
       title: "",
       date: "",
@@ -193,6 +205,7 @@ const ManageEvents = () => {
       posterUrl: "",
       coverUrl: "",
     });
+    setEditingId(null);
 
     toast({
       title: status === "Published" ? "Event published" : "Draft saved",
@@ -365,10 +378,47 @@ const ManageEvents = () => {
               </p>
             )}
             {events.map((e) => (
-              <div key={e.id} className="mb-2 rounded border p-3">
-                <div className="font-semibold">{e.title}</div>
-                <div className="text-xs text-muted-foreground">
-                  {e.date} • {e.category} • {e.status}
+              <div key={e.id} className="mb-2 rounded border p-3 flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-semibold">{e.title}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {e.date} • {e.category} • {e.status}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      setEditingId(e.id);
+                      setForm({
+                        title: e.title,
+                        date: e.date,
+                        time: e.time,
+                        venue: e.venue,
+                        category: e.category,
+                        society: e.society,
+                        description: e.description,
+                        posterUrl: e.posterUrl,
+                        coverUrl: e.coverUrl,
+                      });
+                      toast({ title: "Loaded into editor" });
+                    }}
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => {
+                      if (confirm(`Delete this ${e.status.toLowerCase()} event?`)) {
+                        deleteEvent(e.id);
+                      }
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" /> Delete
+                  </Button>
                 </div>
               </div>
             ))}

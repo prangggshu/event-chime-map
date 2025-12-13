@@ -1,11 +1,13 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
+const AUTH_TOKEN_KEY = "authToken";
 import { GraduationCap, Building2, Eye } from "lucide-react";
 
 const AUTH_ROLE_KEY = "auth:role";
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [role, setRole] = useState("student");
 
   const [societyName, setSocietyName] = useState("");
@@ -31,7 +33,14 @@ export default function Login() {
     }
 
     localStorage.setItem(AUTH_ROLE_KEY, role);
-    navigate(role === "student" ? "/" : "/manage-events");
+    localStorage.setItem(AUTH_TOKEN_KEY, `${role}-demo-token`);
+
+    const from = (location.state as any)?.from?.pathname as string | undefined;
+    if (from) {
+      navigate(from, { replace: true });
+    } else {
+      navigate(role === "student" ? "/" : "/manage-events");
+    }
   };
 
   return (
